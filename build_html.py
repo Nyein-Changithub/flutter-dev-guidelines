@@ -271,6 +271,7 @@ def build() -> None:
 
     toc = []
     body = []
+    tab_sections: list[str] = []
     for sec in sections:
         aud = " ".join(sec["aud"]) or "everyone"
         num = re.match(r"^(\d+)\.\s+(.*)$", sec["title"])
@@ -279,7 +280,11 @@ def build() -> None:
             if num
             else f'<span class="toc-num">·</span>{inline(sec["title"])}'
         )
-        toc.append(f'<li data-aud="{aud}"><a href="#{sec["id"]}">{label}</a></li>')
+        has_tabs = any("data-tabs" in part for part in sec["body"])
+        badge = '<span class="toc-fw" aria-hidden="true"></span>' if has_tabs else ""
+        if has_tabs and num:
+            tab_sections.append(f'<a href="#{sec["id"]}">{num.group(1)}</a>')
+        toc.append(f'<li data-aud="{aud}"><a href="#{sec["id"]}">{label}{badge}</a></li>')
         body.append(
             f'<section class="doc-section" id="sec-{sec["id"]}" data-aud="{aud}">'
             + "".join(sec["body"])
@@ -293,6 +298,7 @@ def build() -> None:
         "{{META}}": meta,
         "{{TOC}}": "".join(toc),
         "{{BODY}}": "".join(body),
+        "{{FW_SECTIONS}}": (", ".join(tab_sections[:-1]) + " and " + tab_sections[-1]) if len(tab_sections) > 1 else "".join(tab_sections),
     }.items():
         page = page.replace(key, value)
     OUT.write_text(page, encoding="utf-8")
@@ -486,7 +492,18 @@ pre { margin: 0; padding: 14px 16px; overflow-x: auto; color: var(--code-ink); f
 pre code { font-size: inherit; }
 .tok-k { color: #ff9eb6; } .tok-s { color: #a5d6a7; } .tok-c { color: #7f8b97; font-style: italic; } .tok-t { color: #8ec5ff; } .tok-a { color: #ffcc80; }
 
-.tabs { margin: 16px 0; }
+.tabs { margin: 16px 0; border-radius: 10px; }
+.tabs.flash { animation: fwflash 1.1s ease-out; }
+@keyframes fwflash { from { box-shadow: 0 0 0 4px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
+.fw-note { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); margin: -10px 8px 22px; }
+.fw-note strong { color: var(--accent); }
+.fw-note a { font-weight: 600; }
+.toc-fw {
+  margin-left: auto; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); white-space: nowrap; align-self: center;
+}
+th.fw-col { color: var(--accent); background: var(--accent-soft); }
+td.fw-col { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
 .tab-list { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
 .tab {
   border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 14px; font-weight: 600;
@@ -583,6 +600,7 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
       <button class="role fw" type="button" data-fw="riverpod" aria-pressed="false">Riverpod</button>
       <button class="role fw" type="button" data-fw="bloc" aria-pressed="false">Bloc</button>
     </div>
+    <p class="fw-note" aria-live="polite">Code in sections {{FW_SECTIONS}} is shown in <strong id="fwName">GetX</strong>. All other sections apply to every approach.</p>
     <div class="side-label">Contents</div>
     <ol class="toc" id="toc">{{TOC}}</ol>
   </nav>
@@ -654,7 +672,25 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
   applyRole(store.get(NS + 'role') || 'all');
 
   // Framework tabs: one choice switches every example on the page
-  const applyFw = (fw) => {
+  const FW_LABEL = { getx: 'GetX', provider: 'Provider', riverpod: 'Riverpod', bloc: 'Bloc' };
+  const fwTables = [...document.querySelectorAll('table')].filter(tb => {
+    const h = tb.querySelector('thead') ? tb.querySelector('thead').textContent.toLowerCase() : '';
+    return h.includes('getx') && h.includes('riverpod');
+  });
+  const applyFw = (fw, flash) => {
+    const name = FW_LABEL[fw] || fw;
+    const label = document.getElementById('fwName');
+    if (label) label.textContent = name;
+    document.querySelectorAll('.toc-fw').forEach(b => (b.textContent = name));
+    fwTables.forEach(tb => {
+      const col = [...tb.querySelectorAll('thead th')].findIndex(th => th.textContent.toLowerCase().includes(fw));
+      tb.querySelectorAll('tr').forEach(tr => [...tr.children].forEach((c, n) => c.classList.toggle('fw-col', n === col)));
+    });
+    if (flash && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.querySelectorAll('[data-tabs]').forEach(g => {
+        g.classList.remove('flash'); void g.offsetWidth; g.classList.add('flash');
+      });
+    }
     document.querySelectorAll('[data-tabs]').forEach(group => {
       const tabs = [...group.querySelectorAll('.tab')];
       const pick = tabs.find(t => t.dataset.fw.split(' ').includes(fw)) || tabs[0];
@@ -669,7 +705,7 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
     store.set(NS + 'fw', fw);
   };
   let currentFw = store.get(NS + 'fw') || 'getx';
-  document.querySelectorAll('.fw').forEach(b => b.addEventListener('click', () => applyFw(currentFw = b.dataset.fw)));
+  document.querySelectorAll('.fw').forEach(b => b.addEventListener('click', () => applyFw(currentFw = b.dataset.fw, true)));
   document.querySelectorAll('[data-tabs]').forEach(group => {
     const tabs = [...group.querySelectorAll('.tab')];
     tabs.forEach((t, n) => {
