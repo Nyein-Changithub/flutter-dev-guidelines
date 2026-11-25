@@ -89,10 +89,10 @@ lib/
     │   ├── theme/            # Colors, text styles, spacing
     │   └── utils/            # Small pure helpers (formatting, validation)
     ├── routes/               # Route names and page registration
-    ├── l10n/                 # Localization (l10n): text, dates, currency
+    ├── lang/                 # Translations and localization: text, dates, currency
     └── features/             # Or "modules/". One folder per feature.
         └── booking/
-            ├── di/           # Registers dependencies (GetX bindings or providers)
+            ├── bindings/     # Registers dependencies (GetX bindings or providers)
             ├── state/        # Controllers, notifiers, cubits or blocs
             ├── data/         # Repositories, API services, DTOs
             ├── models/       # Domain models
@@ -966,7 +966,7 @@ Every project's `README.md` **MUST** answer:
 
 ### New feature
 
-- [ ] Feature folder created with `screens/`, `state/`, `data/`, `models/`, `di/`
+- [ ] Feature folder created with `screens/`, `state/`, `data/`, `models/`, `bindings/`
 - [ ] Repository interface defined; real and fake implementations exist
 - [ ] Route constant added (`GetPage` or `GoRoute`) with its dependencies registered; typed arguments class used
 - [ ] All user text added to every translation file
