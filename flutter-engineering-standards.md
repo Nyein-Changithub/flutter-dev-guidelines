@@ -14,9 +14,9 @@ You don't have to read everything. Pick your path:
 
 | You are | Read these sections | Time |
 |---|---|---|
-| Non-technical (product owner, manager, QA, client) | 1, 2, 20, 21, Glossary | 15 min |
+| Non-technical (product owner, manager, QA, client) | 1, 2, Glossary | 15 min |
 | Beginner (new to Flutter) | 1 to 4, 6, 11, Glossary | 45 min |
-| Junior developer | Everything except 20, then the checklists in 19 | 2 hours |
+| Junior developer | Everything | 2 hours |
 | Senior developer or tech lead | Everything. You enforce it in code review. | 2 to 3 hours |
 
 Each section starts with an **Audience** line and, where useful, an **In plain words** box that explains the idea without code.
@@ -65,8 +65,6 @@ If you remember nothing else, remember these.
 | Performance | The app opens fast, scrolls smoothly and saves battery | Users stay; app store ratings go up |
 | Technical debt | Shortcuts that make later changes slower | Ignored debt turns a 1-day change into a 1-week change |
 | Test | Code that automatically checks other code | Bugs are caught before customers see them |
-
-How to judge a project without reading code: ask the team for the scorecard in section 20. A healthy project can answer "yes" to most of it.
 
 ---
 
@@ -961,6 +959,7 @@ Every project's `README.md` **MUST** answer:
 
 ---
 
+<!-- HIDDEN: sections 19 to 21 (Checklists, Project scorecard, Case study). Delete this line and the matching closing line to show them again.
 ## 19. Checklists
 
 **Audience:** Junior, Senior
@@ -1105,6 +1104,8 @@ This guide was written after comparing two real Flutter apps in the same busines
 
 **Fair note:** Project A is six times smaller and has no live backend yet, so it's easier to keep clean. The lesson is not "one team is better". Project A's habits and Project B's infrastructure together make the standard this guide describes.
 
+
+-->
 ---
 
 ## Glossary

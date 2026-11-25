@@ -134,6 +134,13 @@ def convert(md: str):
             i += 1
             continue
 
+        if s.startswith("<!--") and s not in ("<!-- tabs -->", "<!-- /tabs -->"):
+            # Skip hidden (commented-out) content until the closing "-->"
+            while i < len(lines) and "-->" not in lines[i]:
+                i += 1
+            i += 1
+            continue
+
         if s == "<!-- tabs -->":
             tab_group += 1
             i += 1

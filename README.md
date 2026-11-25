@@ -7,12 +7,9 @@ The rules work with any state-management approach. Code examples for state, depe
 ## What's inside
 
 - **10 golden rules**: the one-page summary
-- **21 sections**: project structure, naming and lint, architecture and design patterns, state management (with a guide to choosing between GetX, Provider, Riverpod and Bloc), dependency injection, navigation, networking, models, UI and design system, performance, security, error handling, environments, testing, Git and CI, documentation
+- **18 sections**: project structure, naming and lint, architecture and design patterns, state management (with a guide to choosing between GetX, Provider, Riverpod and Bloc), dependency injection, navigation, networking, models, UI and design system, performance, security, error handling, environments, testing, Git and CI, documentation
 - **Plain-language explanations** for non-technical readers
 - **MUST / SHOULD / AVOID** rules with good and bad Dart examples
-- **Checklists** for new features, pull request reviews and releases
-- **A 24-point scorecard** to grade any Flutter project
-- **A case study** comparing a prototype and a production app
 - **A glossary** of common terms
 
 ## How to read it
