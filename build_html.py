@@ -49,6 +49,37 @@ def inline(text: str) -> str:
     return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m.group(1))], text)
 
 
+FRAMEWORKS = ("getx", "provider", "riverpod", "bloc", "go_router")
+
+
+def render_code(lang: str, code: str) -> str:
+    return (
+        f'<div class="code"><div class="code-bar"><span>{lang}</span>'
+        f'<button class="copy" type="button" aria-label="Copy code">Copy</button></div>'
+        f'<pre><code class="lang-{lang}">{html.escape(code)}</code></pre></div>'
+    )
+
+
+def render_tabs(group: int, tabs: list[tuple[str, str, str]]) -> str:
+    buttons, panels = [], []
+    for n, (label, lang, code) in enumerate(tabs):
+        fw = " ".join(k for k in FRAMEWORKS if k in label.lower()) or slug(label)
+        tid, pid = f"t{group}-{n}", f"p{group}-{n}"
+        on = n == 0
+        buttons.append(
+            f'<button class="tab" role="tab" type="button" id="{tid}" aria-controls="{pid}" '
+            f'aria-selected="{str(on).lower()}" tabindex="{0 if on else -1}" data-fw="{fw}">{html.escape(label)}</button>'
+        )
+        panels.append(
+            f'<div class="tab-panel" role="tabpanel" id="{pid}" aria-labelledby="{tid}" '
+            f'data-label="{html.escape(label)}"{"" if on else " hidden"}>{render_code(lang, code)}</div>'
+        )
+    return (
+        '<div class="tabs" data-tabs><div class="tab-list" role="tablist" aria-label="Code example by approach">'
+        + "".join(buttons) + "</div>" + "".join(panels) + "</div>"
+    )
+
+
 def render_table(rows: list[str]) -> str:
     def cells(row: str) -> list[str]:
         return [c.strip() for c in row.strip().strip("|").split("|")]
@@ -90,6 +121,7 @@ def convert(md: str):
     cur: list[str] | None = None
     title = ""
     checklist_n = 0
+    tab_group = 0
 
     def emit(s: str) -> None:
         (cur if cur is not None else header_parts).append(s)
@@ -100,6 +132,30 @@ def convert(md: str):
 
         if not s or s == "---":
             i += 1
+            continue
+
+        if s == "<!-- tabs -->":
+            tab_group += 1
+            i += 1
+            tabs = []
+            while i < len(lines) and lines[i].strip() != "<!-- /tabs -->":
+                label = re.match(r"^\*\*(.+?)\*\*$", lines[i].strip())
+                if not label:
+                    i += 1
+                    continue
+                i += 1
+                while not lines[i].strip().startswith("```"):
+                    i += 1
+                lang = lines[i].strip()[3:].strip() or "text"
+                i += 1
+                buf = []
+                while not lines[i].strip().startswith("```"):
+                    buf.append(lines[i])
+                    i += 1
+                i += 1
+                tabs.append((label.group(1), lang, "\n".join(buf)))
+            i += 1
+            emit(render_tabs(tab_group, tabs))
             continue
 
         if s.startswith("```"):
@@ -430,6 +486,16 @@ pre { margin: 0; padding: 14px 16px; overflow-x: auto; color: var(--code-ink); f
 pre code { font-size: inherit; }
 .tok-k { color: #ff9eb6; } .tok-s { color: #a5d6a7; } .tok-c { color: #7f8b97; font-style: italic; } .tok-t { color: #8ec5ff; } .tok-a { color: #ffcc80; }
 
+.tabs { margin: 16px 0; }
+.tab-list { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
+.tab {
+  border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 14px; font-weight: 600;
+  padding: 9px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+.tab-panel .code { margin-top: 10px; }
 .checklist { border: 1px solid var(--line); border-radius: 10px; margin: 12px 0 20px; overflow: hidden; }
 .checklist ul { list-style: none; margin: 0; padding: 6px; }
 .checklist li { margin: 0; }
@@ -474,7 +540,9 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 @media print {
-  .topbar, .sidebar, .to-top, .copy, .reset { display: none !important; }
+  .topbar, .sidebar, .to-top, .copy, .reset, .tab-list { display: none !important; }
+  .tab-panel[hidden] { display: block !important; }
+  .tab-panel::before { content: attr(data-label); display: block; font-weight: 700; margin-top: 12px; }
   .layout { display: block; padding: 0; }
   main { padding: 0; }
   .doc-section { box-shadow: none; break-inside: auto; opacity: 1 !important; display: block !important; }
@@ -507,6 +575,13 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
       <button class="role" type="button" data-role="beginner" aria-pressed="false">Beginner</button>
       <button class="role" type="button" data-role="junior" aria-pressed="false">Junior</button>
       <button class="role" type="button" data-role="senior" aria-pressed="false">Senior</button>
+    </div>
+    <div class="side-label">Code examples in</div>
+    <div class="roles" role="group" aria-label="Show code examples for">
+      <button class="role fw" type="button" data-fw="getx" aria-pressed="true">GetX</button>
+      <button class="role fw" type="button" data-fw="provider" aria-pressed="false">Provider</button>
+      <button class="role fw" type="button" data-fw="riverpod" aria-pressed="false">Riverpod</button>
+      <button class="role fw" type="button" data-fw="bloc" aria-pressed="false">Bloc</button>
     </div>
     <div class="side-label">Contents</div>
     <ol class="toc" id="toc">{{TOC}}</ol>
@@ -570,13 +645,49 @@ footer { text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px
     return a.includes(role);
   };
   const applyRole = (role) => {
-    document.querySelectorAll('.role').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.role === role)));
+    document.querySelectorAll('.role[data-role]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.role === role)));
     sections.forEach(s => s.classList.toggle('dim', !matches(s.dataset.aud, role)));
     tocItems.forEach(li => li.classList.toggle('dim', !matches(li.dataset.aud, role)));
     store.set(NS + 'role', role);
   };
-  document.querySelectorAll('.role').forEach(b => b.addEventListener('click', () => applyRole(b.dataset.role)));
+  document.querySelectorAll('.role[data-role]').forEach(b => b.addEventListener('click', () => applyRole(b.dataset.role)));
   applyRole(store.get(NS + 'role') || 'all');
+
+  // Framework tabs: one choice switches every example on the page
+  const applyFw = (fw) => {
+    document.querySelectorAll('[data-tabs]').forEach(group => {
+      const tabs = [...group.querySelectorAll('.tab')];
+      const pick = tabs.find(t => t.dataset.fw.split(' ').includes(fw)) || tabs[0];
+      tabs.forEach(t => {
+        const on = t === pick;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+    });
+    document.querySelectorAll('.fw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fw === fw)));
+    store.set(NS + 'fw', fw);
+  };
+  let currentFw = store.get(NS + 'fw') || 'getx';
+  document.querySelectorAll('.fw').forEach(b => b.addEventListener('click', () => applyFw(currentFw = b.dataset.fw)));
+  document.querySelectorAll('[data-tabs]').forEach(group => {
+    const tabs = [...group.querySelectorAll('.tab')];
+    tabs.forEach((t, n) => {
+      t.addEventListener('click', () => {
+        const keys = t.dataset.fw.split(' ');
+        if (!keys.includes(currentFw)) currentFw = keys[0];
+        applyFw(currentFw);
+      });
+      t.addEventListener('keydown', e => {
+        const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return;
+        const next = tabs[(n + step + tabs.length) % tabs.length];
+        next.click();
+        next.focus();
+      });
+    });
+  });
+  applyFw(currentFw);
 
   // Light syntax colouring for Dart / YAML / bash
   const KW = /\b(abstract|interface|final|class|sealed|extends|implements|const|return|async|await|try|on|catch|throw|switch|case|if|else|for|in|new|void|static|factory|required|late|import|enum|override|super|this|true|false|null|Future|String|int|double|bool|List|Map|dynamic)\b/g;

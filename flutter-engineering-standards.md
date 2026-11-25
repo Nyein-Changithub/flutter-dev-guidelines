@@ -2,7 +2,7 @@
 
 A practical guide to writing Flutter apps that are clean, fast, safe and easy to change, for everyone on the team, from product owners to senior engineers.
 
-Version 1.0 · November 2026 · Applies to any Flutter app (examples use GetX, Dio and Retrofit, but the rules hold for any stack)
+Version 1.1 · November 2026 · Applies to any Flutter app. State, dependency injection and navigation examples cover GetX, Provider, Riverpod and Bloc; networking examples use Dio.
 
 ---
 
@@ -20,6 +20,8 @@ You don't have to read everything. Pick your path:
 | Senior developer or tech lead | Everything. You enforce it in code review. | 2 to 3 hours |
 
 Each section starts with an **Audience** line and, where useful, an **In plain words** box that explains the idea without code.
+
+The rules work with any state-management approach. Where code differs, sections 6, 7 and 8 show the same example for **GetX**, **Provider**, **Riverpod** and **Bloc**. In the HTML version, pick your approach once and every example switches to it.
 
 The rule words mean:
 
@@ -89,11 +91,11 @@ lib/
     │   ├── theme/            # Colors, text styles, spacing
     │   └── utils/            # Small pure helpers (formatting, validation)
     ├── routes/               # Route names and page registration
-    ├── l10n/                 # Translations
+    ├── l10n/                 # Localization (l10n): text, dates, currency
     └── features/             # Or "modules/". One folder per feature.
         └── booking/
-            ├── bindings/     # Dependency registration for this feature
-            ├── controllers/  # State and decisions
+            ├── di/           # Registers dependencies (GetX bindings or providers)
+            ├── state/        # Controllers, notifiers, cubits or blocs
             ├── data/         # Repositories, API services, DTOs
             ├── models/       # Domain models
             ├── screens/      # Full pages
@@ -195,7 +197,7 @@ Comments:
 | Layer | Does | Never does |
 |---|---|---|
 | Screen / widget | Builds UI from state; forwards taps to the controller | Calls the API, parses JSON, holds business rules |
-| Controller | Holds state; validates input; calls repositories; maps results to UI state | Imports widgets other than `TextEditingController` and similar; knows URLs |
+| Controller (or notifier, cubit, bloc) | Holds state; validates input; calls repositories; maps results to UI state | Imports widgets other than `TextEditingController` and similar; knows URLs |
 | Repository | Hides where data comes from; converts DTOs to models; maps errors | Shows dialogs or snackbars; navigates |
 | API service / storage | Raw HTTP or disk access | Contains business rules |
 
@@ -267,27 +269,52 @@ The controller depends on `AuthRepository`, so tests, demos and the real app use
 
 > **In plain words:** "State" is everything the screen needs to remember right now: which seats are picked, whether it is loading, what error to show. State management is the rule for who owns that memory and how the screen finds out it changed.
 
-Choose **one** approach per project and write it in the README. GetX, Riverpod and Bloc are all fine; mixing them is not. The rules below use GetX because it is common, but each rule applies to every approach.
+This guide says **controller** for whatever object holds a screen's state: a `GetxController` (GetX), a `ChangeNotifier` (Provider), a `Notifier` (Riverpod) or a `Cubit` / `Bloc` (Bloc). Every rule applies to all four. Where the code differs, an example is shown for each.
 
-Rules:
+### Choosing an approach
+
+| | GetX | Provider | Riverpod | Bloc / Cubit |
+|---|---|---|---|---|
+| What it is | State, dependency injection and navigation in one package | Flutter's original recommended approach, built on `InheritedWidget` | Compile-safe successor to Provider, by the same author | Events or method calls in, states out, over streams |
+| State lives in | `GetxController` + `.obs` | `ChangeNotifier` | `Notifier` / `AsyncNotifier` | `Cubit` / `Bloc` |
+| UI listens with | `Obx`, `GetBuilder` | `context.watch`, `Consumer`, `Selector` | `ref.watch`, `ConsumerWidget` | `BlocBuilder`, `BlocListener`, `BlocSelector` |
+| Dependency injection | `Get.put`, `Bindings` | `Provider` above the screen | Providers, overridable in tests | `RepositoryProvider`, `BlocProvider` |
+| Navigation | Built in (`Get.toNamed`) | `go_router` | `go_router` | `go_router` |
+| Learning curve | Easiest | Easy | Medium | Steeper |
+| Testability | Fair (global access) | Good | Excellent | Excellent |
+| Boilerplate | Very little | Little | Little to medium | More |
+
+How to decide:
+
+1. **Existing app:** keep what it already uses. One consistent approach beats a half-finished migration.
+2. **New app, most teams:** Riverpod. It catches mistakes at compile time, is easy to test, and doesn't need a `BuildContext` to read state.
+3. **Large team, strict reviews, complex flows such as payments:** Bloc. Every change goes through an explicit method or event, so behaviour is predictable and easy to trace.
+4. **Small app, or learning Flutter:** Provider. It has the fewest new ideas.
+5. **Team already fluent in GetX that needs to ship fast:** GetX is fine, but follow section 7 strictly (constructor injection) so the app stays testable and can migrate later.
+
+**MUST** use one approach per project and name it in the README. Mixing `setState`, GetX and `ChangeNotifier` for the same data is the most common cause of "the screen didn't update" bugs.
+
+### Rules
 
 - **MUST** keep business state in controllers, not in widgets.
 - **MUST** use `setState` only for purely visual, local state (an expanded tile, a hover). If a controller exists for the screen, the controller owns the data.
-- **MUST** dispose everything in `onClose()` (GetX) or `dispose()`: `TextEditingController`, `ScrollController`, `FocusNode`, `Timer`, `StreamSubscription`, `Worker`.
+- **MUST** dispose everything a controller creates: in `onClose()` (GetX), `dispose()` (ChangeNotifier), `close()` (Bloc) or `ref.onDispose` (Riverpod). That includes `TextEditingController`, `ScrollController`, `FocusNode`, `Timer` and `StreamSubscription`.
 - **SHOULD** model screen status as one value, not several booleans that can contradict each other.
 - **SHOULD** use enums or sealed classes instead of magic strings (`TicketType.local`, not `'local'`).
-- **SHOULD** wrap only the widget that changes in `Obx` / `Consumer` / `BlocBuilder`, not the whole page.
-- **AVOID** `Get.context`, `Get.arguments` and `Get.find` inside deep widgets. Pass what they need.
+- **SHOULD** rebuild only the widget that changes: `Obx` around one widget (GetX), `context.select` or `Selector` (Provider), `ref.watch(provider.select(...))` (Riverpod), `BlocSelector` or `buildWhen` (Bloc).
+- **AVOID** reading global objects deep inside widgets (`Get.find`, `Get.context`, `GetIt.I`). Pass widgets what they need, or read it once at the top of the screen.
+
+### One sealed state, in every approach
 
 Bad: flags that can disagree.
 
 ```dart
-final isLoading = false.obs;
-final hasError = false.obs;
-final trips = <Trip>[].obs; // what if isLoading AND hasError are both true?
+bool isLoading = false;
+bool hasError = false;
+List<Trip> trips = []; // what if isLoading AND hasError are both true?
 ```
 
-Good: one sealed state.
+Good: one sealed state. This part is plain Dart and is the same in every approach.
 
 ```dart
 sealed class TripsState {
@@ -304,7 +331,15 @@ final class TripsFailed extends TripsState {
   const TripsFailed(this.message);
   final String message;
 }
+```
 
+The controller that loads trips, in each approach:
+
+<!-- tabs -->
+
+**GetX**
+
+```dart
 class TripsController extends GetxController {
   TripsController(this._repo);
   final TripRepository _repo;
@@ -313,21 +348,108 @@ class TripsController extends GetxController {
 
   Future<void> load(TripSearch search) async {
     state.value = const TripsLoading();
-    final result = await _repo.search(search);
-    state.value = switch (result) {
+    state.value = switch (await _repo.search(search)) {
       Ok(:final value) => TripsLoaded(value),
       Err(:final failure) => TripsFailed(failure.userMessage),
     };
   }
 }
 
-// In the screen: the compiler forces you to handle every case.
-Obx(() => switch (controller.state.value) {
-      TripsLoading() => const TripListShimmer(),
-      TripsLoaded(:final trips) => TripList(trips: trips),
-      TripsFailed(:final message) => ErrorRetry(message: message, onRetry: retry),
-    });
+// In the screen: rebuild only this part
+Obx(() => TripsView(state: controller.state.value));
 ```
+
+**Provider**
+
+```dart
+class TripsNotifier extends ChangeNotifier {
+  TripsNotifier(this._repo);
+  final TripRepository _repo;
+
+  TripsState _state = const TripsLoading();
+  TripsState get state => _state;
+
+  Future<void> load(TripSearch search) async {
+    _state = const TripsLoading();
+    notifyListeners();
+    _state = switch (await _repo.search(search)) {
+      Ok(:final value) => TripsLoaded(value),
+      Err(:final failure) => TripsFailed(failure.userMessage),
+    };
+    notifyListeners();
+  }
+}
+
+// In the screen: listen to this one field only
+final state = context.select((TripsNotifier n) => n.state);
+return TripsView(state: state);
+```
+
+**Riverpod**
+
+```dart
+final tripsProvider =
+    NotifierProvider<TripsNotifier, TripsState>(TripsNotifier.new);
+
+class TripsNotifier extends Notifier<TripsState> {
+  @override
+  TripsState build() => const TripsLoading();
+
+  Future<void> load(TripSearch search) async {
+    state = const TripsLoading();
+    state = switch (await ref.read(tripRepositoryProvider).search(search)) {
+      Ok(:final value) => TripsLoaded(value),
+      Err(:final failure) => TripsFailed(failure.userMessage),
+    };
+  }
+}
+
+// In the screen (a ConsumerWidget)
+final state = ref.watch(tripsProvider);
+return TripsView(state: state);
+```
+
+**Bloc**
+
+```dart
+class TripsCubit extends Cubit<TripsState> {
+  TripsCubit(this._repo) : super(const TripsLoading());
+  final TripRepository _repo;
+
+  Future<void> load(TripSearch search) async {
+    emit(const TripsLoading());
+    emit(switch (await _repo.search(search)) {
+      Ok(:final value) => TripsLoaded(value),
+      Err(:final failure) => TripsFailed(failure.userMessage),
+    });
+  }
+}
+
+// In the screen
+BlocBuilder<TripsCubit, TripsState>(
+  builder: (context, state) => TripsView(state: state),
+);
+```
+
+<!-- /tabs -->
+
+The widget that draws the state is identical in all four, because it only receives a `TripsState`. The compiler makes you handle every case:
+
+```dart
+class TripsView extends StatelessWidget {
+  const TripsView({super.key, required this.state});
+  final TripsState state;
+
+  @override
+  Widget build(BuildContext context) => switch (state) {
+        TripsLoading() => const TripListShimmer(),
+        TripsLoaded(:final trips) => TripList(trips: trips),
+        TripsFailed(:final message) => ErrorMessage(message: message),
+      };
+}
+```
+
+Riverpod tip: when a screen only has loading, data and error states, `AsyncNotifier` and `AsyncValue` give you those three for free, so you don't need your own sealed class.
 
 ---
 
@@ -339,13 +461,13 @@ Obx(() => switch (controller.state.value) {
 
 Rules:
 
-- **MUST** receive dependencies through the constructor.
-- **MUST** register dependencies in bindings (or providers), in one place per feature, plus one app binding for global services.
-- **MUST NOT** call `Get.put(...)` or `Get.find()` in a class field initialiser. It hides dependencies and creates duplicate instances.
-- **SHOULD** use `lazyPut` for feature objects and `permanent: true` only for true app-wide services (network client, session).
-- **SHOULD** register against the interface: `Get.lazyPut<AuthRepository>(() => ApiAuthRepository(...))`.
+- **MUST** receive dependencies through the constructor (in Riverpod, through `ref` inside the provider).
+- **MUST** register dependencies in one place per feature, plus one place for app-wide services: GetX bindings, a `Provider` or `RepositoryProvider` above the route, or Riverpod providers.
+- **MUST NOT** create or look up dependencies in class field initialisers (`= Get.put(...)`, `= Get.find()`, `= GetIt.I<...>()`, `= ApiAuthRepository()`). It hides what a class needs and makes it impossible to replace in tests.
+- **SHOULD** register against the interface (`AuthRepository`), not the implementation.
+- **SHOULD** scope feature objects to their route. Keep only true app-wide services (HTTP client, session) alive for the whole app.
 
-Bad: hidden dependencies that can't be replaced in tests.
+Bad: hidden dependencies that can't be replaced in tests. GetX is shown; the same mistake happens in any approach.
 
 ```dart
 class LoginController extends GetxController {
@@ -360,12 +482,20 @@ class AuthService {
 
 Good: dependencies are visible and replaceable.
 
+<!-- tabs -->
+
+**GetX**
+
 ```dart
 class LoginController extends GetxController {
   LoginController(this._auth);
   final AuthRepository _auth;
 }
 
+// App-wide, once (AppBinding)
+Get.put<AuthRepository>(ApiAuthRepository(api, tokens), permanent: true);
+
+// Per feature (LoginBinding)
 class LoginBinding extends Bindings {
   @override
   void dependencies() {
@@ -374,13 +504,85 @@ class LoginBinding extends Bindings {
 }
 ```
 
+**Provider**
+
+```dart
+class LoginNotifier extends ChangeNotifier {
+  LoginNotifier(this._auth);
+  final AuthRepository _auth;
+}
+
+// App-wide, once (main.dart)
+Provider<AuthRepository>(
+  create: (_) => ApiAuthRepository(api, tokens),
+  child: const MyApp(),
+);
+
+// Per feature (around the login screen)
+ChangeNotifierProvider(
+  create: (context) => LoginNotifier(context.read<AuthRepository>()),
+  child: const LoginScreen(),
+);
+```
+
+**Riverpod**
+
+```dart
+final authRepositoryProvider = Provider<AuthRepository>(
+  (ref) => ApiAuthRepository(ref.watch(authApiProvider), ref.watch(tokenStoreProvider)),
+);
+
+final loginProvider =
+    NotifierProvider<LoginNotifier, LoginState>(LoginNotifier.new);
+
+class LoginNotifier extends Notifier<LoginState> {
+  AuthRepository get _auth => ref.read(authRepositoryProvider);
+
+  @override
+  LoginState build() => const LoginIdle();
+}
+
+// In tests
+ProviderScope(
+  overrides: [authRepositoryProvider.overrideWithValue(FakeAuthRepository())],
+  child: const MyApp(),
+);
+```
+
+**Bloc**
+
+```dart
+class LoginCubit extends Cubit<LoginState> {
+  LoginCubit(this._auth) : super(const LoginIdle());
+  final AuthRepository _auth;
+}
+
+// App-wide, once (main.dart)
+RepositoryProvider<AuthRepository>(
+  create: (_) => ApiAuthRepository(api, tokens),
+  child: const MyApp(),
+);
+
+// Per feature (around the login screen)
+BlocProvider(
+  create: (context) => LoginCubit(context.read<AuthRepository>()),
+  child: const LoginScreen(),
+);
+```
+
+<!-- /tabs -->
+
+In every approach, tests swap `ApiAuthRepository` for `FakeAuthRepository` in exactly one place: the binding, the provider, or a Riverpod override.
+
 ---
 
 ## 8. Navigation and routes
 
 **Audience:** Beginner, Junior, Senior
 
-- **MUST** keep route names as constants in one file (`AppRoutes.checkout`), never as typed strings in screens.
+GetX has its own router. Provider, Riverpod and Bloc apps normally use **go_router**, the routing package published by the Flutter team.
+
+- **MUST** keep route names or paths as constants in one file (`AppRoutes.checkout`), never as typed strings in screens.
 - **SHOULD** pass arguments as a typed class, not a `Map`:
 
 ```dart
@@ -390,11 +592,14 @@ final class CheckoutArgs {
   final List<Seat> seats;
   final DateTime holdUntil;
 }
+```
 
-// push
-Get.toNamed(AppRoutes.checkout, arguments: CheckoutArgs(trip: t, seats: s, holdUntil: h));
+<!-- tabs -->
 
-// read once, in the page builder, then pass it into the controller's constructor
+**GetX**
+
+```dart
+// Route table: read the arguments once, pass them into the controller
 GetPage(
   name: AppRoutes.checkout,
   page: () => const CheckoutScreen(),
@@ -403,11 +608,35 @@ GetPage(
     Get.lazyPut(() => CheckoutController(args, Get.find()));
   }),
 );
+
+// Navigate
+Get.toNamed(AppRoutes.checkout, arguments: CheckoutArgs(trip: t, seats: s, holdUntil: h));
 ```
 
-- **SHOULD** use route middleware (guards) for login-required pages instead of checking in each screen.
+**go_router (Provider, Riverpod, Bloc)**
+
+```dart
+// Route table
+final router = GoRouter(
+  redirect: (context, state) => authGuard(context, state), // login guard
+  routes: [
+    GoRoute(
+      path: AppRoutes.checkout,
+      builder: (context, state) => CheckoutScreen(args: state.extra! as CheckoutArgs),
+    ),
+  ],
+);
+
+// Navigate
+context.push(AppRoutes.checkout, extra: CheckoutArgs(trip: t, seats: s, holdUntil: h));
+```
+
+<!-- /tabs -->
+
+- **SHOULD** remember that go_router's `extra` is lost when the app opens from a link or the web page reloads. Put IDs that must survive in the path (`/checkout/:bookingId`) and load the rest.
+- **SHOULD** use route guards for login-required pages instead of checking in each screen: `GetMiddleware` (GetX) or `redirect` (go_router).
 - **MUST** allow-list deep links and validate their parameters before navigating.
-- **AVOID** controllers that `Get.find` *other* screens' controllers to refresh them. Use a shared repository or an event stream instead.
+- **AVOID** one screen reaching into another screen's controller to refresh it (`Get.find<OtherController>()`, `context.read<OtherCubit>()`). Use a shared repository or an event stream instead.
 
 ---
 
@@ -569,7 +798,7 @@ class SeatLegend extends StatelessWidget {
 | Rule | Why | How |
 |---|---|---|
 | Use `const` widgets | Flutter skips rebuilding them | `const Text('...')`, `const SizedBox(height: 8)` |
-| Rebuild the smallest part | Less work per frame | Wrap only the changing widget in `Obx` / `Consumer` |
+| Rebuild the smallest part | Less work per frame | `Obx` around one widget, `Selector`, `ref.watch(p.select(...))`, `BlocSelector` |
 | Build long lists lazily | Only visible rows are built | `ListView.builder`, `SliverList`, pagination |
 | No heavy work in `build` | `build` can run every frame | Compute in the controller; cache results |
 | Decode JSON off the UI thread | Big responses freeze the UI | `BackgroundTransformer`, `compute()`, `Isolate.run` |
@@ -738,9 +967,9 @@ Every project's `README.md` **MUST** answer:
 
 ### New feature
 
-- [ ] Feature folder created with `screens/`, `controllers/`, `data/`, `models/`, `bindings/`
+- [ ] Feature folder created with `screens/`, `state/`, `data/`, `models/`, `di/`
 - [ ] Repository interface defined; real and fake implementations exist
-- [ ] Route constant and `GetPage` with binding added; typed arguments class used
+- [ ] Route constant added (`GetPage` or `GoRoute`) with its dependencies registered; typed arguments class used
 - [ ] All user text added to every translation file
 - [ ] Colors and text styles come from the theme
 - [ ] Loading, empty, error and success states all designed and handled
@@ -752,7 +981,7 @@ Every project's `README.md` **MUST** answer:
 
 - [ ] `flutter analyze` shows zero issues; CI is green
 - [ ] Each class does one job; no new god class or 400-plus-line file
-- [ ] Dependencies arrive through constructors; no `Get.put` in fields
+- [ ] Dependencies arrive through constructors; no `Get.put`, `Get.find` or `GetIt.I` in fields
 - [ ] No secrets, passwords, tokens or personal data in code or logs
 - [ ] No commented-out code, `print`, or empty `catch`
 - [ ] Errors reach the user as a clear message with a next step
@@ -781,7 +1010,7 @@ Score each line 0, 1 or 2. Maximum 24.
 | 1 | Lint and format | Many analyzer issues | Under 20 issues | Zero issues, enforced in CI |
 | 2 | Structure | Mixed or unclear folders | Feature folders, some leakage | Clean feature-first layout, consistent names |
 | 3 | Layers | UI calls the API directly | Layers exist but leak | Clear UI / state / data separation |
-| 4 | Dependency injection | Service locator everywhere | Mixed | Constructor injection plus bindings |
+| 4 | Dependency injection | Service locator everywhere | Mixed | Constructor injection plus bindings or providers |
 | 5 | State | Mixed systems, string flags | One system, some flags | One system, sealed states, scoped rebuilds |
 | 6 | Reuse and UI | Copy-pasted widgets, hard-coded colors | Some shared widgets | Shared component library and theme tokens |
 | 7 | Networking | URLs in many places, no timeouts | Central client | Typed API, timeouts, refresh, mapped errors |
@@ -886,21 +1115,29 @@ This guide was written after comparing two real Flutter apps in the same busines
 |---|---|
 | API | The server's "menu" of requests the app can make |
 | Binding | A place where a feature's objects are created and registered (GetX) |
+| Bloc / Cubit | A state-management package: a Cubit exposes methods that emit new states; a Bloc turns events into states |
 | Build method | The function that describes what a widget looks like right now |
 | CI | Continuous integration: a server that runs checks on every change |
-| Controller | The object that holds a screen's state and makes decisions |
+| Controller | The object that holds a screen's state and makes decisions (also called notifier, cubit or bloc) |
 | `const` | Tells Flutter a widget never changes, so it can be reused for free |
 | Dependency injection | Handing a class the objects it needs instead of letting it create them |
 | Dio | A popular HTTP client package for Dart |
 | DTO | Data transfer object: the exact shape the server sends |
 | Flavor | A build variant (dev, prod) with its own app ID, name and settings |
+| GetIt | A service locator package, often used with Provider or Bloc |
 | GetX | A Flutter package for state, navigation and dependency injection |
+| go_router | The Flutter team's routing package, used with Provider, Riverpod and Bloc |
 | God class | One class that does too many unrelated jobs |
+| i18n | Internationalization: preparing an app to support many languages and regions |
 | Interceptor | Code that runs on every network request or response |
 | Isolate | A separate Dart worker for heavy tasks, so the UI stays smooth |
+| l10n | Localization: adding one specific language and region (text, dates, currency) |
 | Lint / analyzer | A tool that flags risky or messy code automatically |
+| Notifier | Riverpod's class that holds state and the methods that change it |
+| Provider | Flutter's original recommended state package, built on `InheritedWidget` |
 | Repository | The class that knows where data comes from and hides it from the rest of the app |
 | Retrofit | A package that generates typed API code from annotations |
+| Riverpod | A compile-safe successor to Provider, by the same author |
 | Sealed class | A type with a fixed list of cases that the compiler makes you handle |
 | State | What the screen needs to remember right now |
 | Technical debt | Shortcuts that make future changes slower and riskier |
